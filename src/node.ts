@@ -1,6 +1,7 @@
 import { Server } from 'http';
 import fetch from 'node-fetch'
-import { createTestServer, expect, test } from '../test/test';
+import { createTestServer } from '../test/server';
+import { expect, test } from '../test/test';
 export default fetch
 
 test('node fetch', async () => {

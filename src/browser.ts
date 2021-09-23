@@ -1,7 +1,8 @@
 import { Server } from 'http';
 import 'whatwg-fetch';
+import { createTestServer } from '../test/server';
 export default fetch
-import { createTestServer, expect, test } from '../test/test';
+import { expect, test } from '../test/test';
 
 
 test('browser fetch', async () => {
