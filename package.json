@@ -6,6 +6,8 @@
   "main": "build/node.js",
   "scripts": {
     "test": "node -r ts-node/register ./test/cli.ts",
+    "debug": "NODE_DEBUG=@balena/fetch-debug npm test",
+    "verbose": "NODE_DEBUG=@balena/fetch-verbose,@balena/fetch-debug npm test",
     "lint": "balena-lint --typescript src test"
   },
   "keywords": [],

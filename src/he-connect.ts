@@ -6,7 +6,7 @@ import { URL } from 'url';
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
 
-const debug = debuglog('@balena/fetch');
+const debug = debuglog('@balena/fetch-debug');
 const verbose = debuglog('@balena/fetch-verbose');
 
 export const options = {
@@ -39,7 +39,6 @@ export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: 
   const sockets: net.Socket[] = [];
   let ctFound = false;
   let failed = 0;
-  let i = 0;
   for (const host of addrs) {
     if (ctFound) {
       break;
@@ -57,31 +56,24 @@ export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: 
       } else {
         lastUsed[hostname] = lastUsedPeriod = 6;
       }
-      debug('Connected to', addrs[i]);
+      cb(undefined, socket);
+      debug('Connected to', socket.remoteAddress);
       ctFound = true;
-      for (let j = 0; j < sockets.length; j++) {
-        cb(undefined, socket)
-        for (const sock of sockets) {
-          if (sock !== socket) {
-            sock.destroy();
-          }
+      for (const sock of sockets) {
+        if (sock !== socket) {
+          sock.destroy();
         }
       }
     })
     .on('error', (error: any) => {
-      failed++;
-      if (i === 0) {
+      if (sockets.indexOf(socket) === 0) {
         err = error
       }
-      if (failed === addrs.length) {
-        for (const socket of sockets) {
-          socket.destroy();
-        }
+      if (++failed === sockets.length) {
         // reject with error from first ip address
         cb(err);
       }
     })
-    i++;
     sockets.push(socket)
     // give each connection 300 ms to connect before trying next one
     await promisify(setTimeout)(300)
@@ -108,5 +100,5 @@ export async function getAddrInfo(hostname: string) {
     while (next = !(i%2) ? primary[i++/2|0] || alternate[i++/2|0] : alternate[i++/2|0] || primary[i++/2|0]) {
       yield next;
     }
-  })()
+  })();
 }

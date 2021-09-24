@@ -8,7 +8,7 @@ async function cli() {
 	process.env.NODE_ENV = name + '-test';
 	const debugFlags: string[] = [];
 	if (process.argv.includes('-d')) {
-		debugFlags.push(name);
+		debugFlags.push(name + '-debug');
 	}
 	if (process.argv.includes('-v')) {
 		debugFlags.push(name + '-debug');
