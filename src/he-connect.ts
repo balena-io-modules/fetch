@@ -5,25 +5,22 @@ import { promisify } from 'util';
 import { URL } from 'url';
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
-import { test } from '../test/test';
-import * as https from 'https'
 
 export const options = {
   agent: function(parsedURL: URL) {
     if (parsedURL.protocol === 'https:') {
       return new class extends HttpsAgent {
-        createConnection(url:URL, cb: (err: Error | undefined, socket?: net.Socket) => void) {
-          heConnect(url, cb)
-        }
+        createConnection = createConnection
       }
     } else {
       return new class extends HttpAgent {
-        createConnection(url:URL, cb: (err: Error | undefined, socket?: net.Socket) => void) {
-          heConnect(url, cb)
-        }
+        createConnection = createConnection
       }
     }
   }
+}
+function createConnection(url:URL, cb: (err: Error | undefined, socket?: net.Socket) => void) {
+  heConnect(url, cb)
 }
 
 let lastUsed = 0;

@@ -14,10 +14,16 @@ export default async function fetch(url: RequestInfo, init?: RequestInit) {
   });
 }
 
-test('node fetch', async () => {
+test('node', async () => {
   let server: Server, port: number;
   test('setup', async () => {
     ({server, port} = await createTestServer());
+  });
+
+  test('can fetch local', async () => {
+    const resp = await fetch(`http://localhost:${port}`);
+    expect(resp.status).toBe(200);
+    expect(await resp.text()).toBe('It works!')
   });
 
   test('can fetch api', async () => {
