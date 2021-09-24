@@ -27,13 +27,12 @@ function createConnection(url:URL, cb: (err: Error | undefined, socket?: net.Soc
 }
 
 
-const lastUsed: {[host: string]: 4 | 6 | undefined} = {};
-let lastUsedPeriod = 0;
+const lastSuccessful: {[host: string]: number | undefined} = {};
 export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: net.Socket) => void): Promise<void> {
   debug('Connecting to', url.hostname)
   const {hostname, protocol} = url;
   const port = url.port.length ? Number(url.port) : (protocol === "https:" ? 443 : 80);
-  const addrs = Array.from(await getAddrInfo(url.hostname));
+  const addrs = await getAddrInfo(url.hostname);
 
   let err: Error;
   const sockets: net.Socket[] = [];
@@ -51,10 +50,11 @@ export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: 
       port,
       servername: hostname,
     }).on('connect', () => {
+      // @ts-ignore
       if (net.isIPv4(host)) {
-        lastUsed[hostname] = lastUsedPeriod = 4;
+        lastSuccessful[hostname]  = 4;
       } else {
-        lastUsed[hostname] = lastUsedPeriod = 6;
+        lastSuccessful[hostname] = 6;
       }
       cb(undefined, socket);
       debug('Connected to', socket.remoteAddress);
@@ -69,7 +69,7 @@ export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: 
       if (sockets.indexOf(socket) === 0) {
         err = error
       }
-      if (++failed === sockets.length) {
+      if (++failed === addrs.length) {
         // reject with error from first ip address
         cb(err);
       }
@@ -81,7 +81,7 @@ export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: 
 }
 
 export async function getAddrInfo(hostname: string) {
-  let preferred = lastUsed[hostname] ?? lastUsedPeriod;
+  let preferred = lastSuccessful[hostname];
   const lookups = await dns.lookup(hostname, {
     verbatim: true,
     family: 0,
@@ -91,14 +91,20 @@ export async function getAddrInfo(hostname: string) {
     preferred = lookups[0].family;
   }
 
-  const primary = lookups.filter(lookup => lookup.family === preferred).map(l => l.address);
-  const alternate = lookups.filter(lookup => lookup.family !== preferred).map(l => l.address);
-
-  let i = 0;
-  return (function*() {
-    let next;
-    while (next = !(i%2) ? primary[i++/2|0] || alternate[i++/2|0] : alternate[i++/2|0] || primary[i++/2|0]) {
-      yield next;
+  const result: string[] = [];
+  let next = preferred;
+  const queue: string[] = [];
+  for (const {address, family} of lookups) {
+    if (family === next) {
+      result.push(address);
+      if (queue.length) {
+        result.push(queue.shift() as string);
+      } else {
+        next = next === 6 ? 4 : 6;
+      }
+    } else {
+      queue.push(address)
     }
-  })();
+  }
+  return result.concat(queue);
 }
