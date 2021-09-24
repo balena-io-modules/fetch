@@ -2,16 +2,15 @@ import { Server } from 'http';
 import _fetch, { RequestInfo, RequestInit } from 'node-fetch'
 import { createTestServer } from '../test/server';
 import { expect, test } from '../test/test';
-import { getOptions, heConnect } from './he-connect';
+import { options } from './he-connect';
 
 export default async function fetch(url: RequestInfo, init?: RequestInit) {
   if (typeof url !== 'string') {
     return _fetch(url, init);
   }
-  const socket = await heConnect(url)
   return _fetch(url, {
     ...init,
-    ...getOptions(socket),
+    ...options
   });
 }
 
@@ -21,8 +20,8 @@ test('node fetch', async () => {
     ({server, port} = await createTestServer());
   });
 
-  test('can browser fetch', async () => {
-    const resp = await fetch(`https://google.com`);
+  test('can fetch api', async () => {
+    const resp = await fetch(`https://api.balena-cloud.com/ping`);
     expect(resp.status).toBe(200);
     expect(await resp.text()).toBe('OK')
   });

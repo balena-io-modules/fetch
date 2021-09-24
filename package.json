@@ -1,5 +1,5 @@
 {
-  "name": "fetch",
+  "name": "@balena/fetch",
   "version": "0.0.1",
   "description": "",
   "browser": "build/browser.js",
