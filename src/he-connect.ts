@@ -1,10 +1,13 @@
 import * as net from 'net';
 import * as tls from 'tls';
 import * as dns from 'dns/promises';
-import { promisify } from 'util';
+import { debuglog, promisify } from 'util';
 import { URL } from 'url';
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
+
+const debug = debuglog('happy-eyes');
+const verbose = debuglog('happy-eyes-verbose');
 
 export const options = {
   agent: function(parsedURL: URL) {
@@ -25,6 +28,7 @@ function createConnection(url:URL, cb: (err: Error | undefined, socket?: net.Soc
 
 let lastUsed = 0;
 export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: net.Socket) => void): Promise<void> {
+  debug('Connecting to', url.hostname)
   const {port:_port, hostname, protocol} = url;
   const port = _port.length ? Number(_port) : (protocol === "https:" ? 443 : 80);
   const lookups = await dns.lookup(hostname, {
@@ -35,7 +39,7 @@ export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: 
 
   const v4 = lookups.filter(lookup => lookup.family === 4);
   const v6 = lookups.filter(lookup => lookup.family === 6);
-  const addrs = (lastUsed === 4 ? [...v4, ...v6] : [...v6, ...v4]).map(lookup => lookup.address);
+  const addrs = (lastUsed === 0 ? lookups : lastUsed === 4 ? [...v4, ...v6] : [...v6, ...v4]).map(lookup => lookup.address);
   if (addrs.length < 1) {
     throw new Error(`Could not resolve host, ${hostname}`)
   }
@@ -48,19 +52,27 @@ export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: 
     if (ctFound) {
       break;
     }
+    // @ts-ignore
     const host = addrs[i]
+    debug(`Trying ${host}...`);
     // @ts-ignore
     const socket = (protocol === 'https:' ? tls : net).connect({
       host,
       port: port,
       servername: hostname,
     }).on('connect', () => {
+      if (net.isIPv4(host)) {
+        lastUsed = 4;
+      } else {
+        lastUsed = 6;
+      }
+      debug('Connected to', addrs[i]);
       ctFound = true;
       for (let j = 0; j < sockets.length; j++) {
         cb(undefined, socket)
         if (i !== j) {
-          if (!sockets[i].destroyed) {
-            sockets[i].destroy()
+          if (!sockets[j].destroyed) {
+            sockets[j].destroy()
           }
         }
       }
