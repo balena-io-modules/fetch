@@ -1,32 +1,34 @@
 import * as net from 'net';
+import * as tls from 'tls';
 import * as dns from 'dns/promises';
 import { promisify } from 'util';
 import { URL } from 'url';
 import { RequestInit } from 'node-fetch';
+import * as http from 'http'
+import * as https from 'https'
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
 
-export class HESAgent extends HttpsAgent {
-  createConnection = heConnect
-}
-
-export class HEAgent extends HttpAgent {
-  createConnection = heConnect
-}
-
-export const options: RequestInit = {
-  agent: function(parsedURL) {
-    if (parsedURL.protocol === 'https') {
-      return new HESAgent
-    } else {
-      return new HttpAgent
+export const getOptions = (socket: net.Socket): RequestInit => {
+  return {
+    agent: function(parsedURL) {
+      if (parsedURL.protocol === 'https:') {
+        return new class extends HttpsAgent {
+          createConnection = () => socket
+        }
+      } else {
+        return new class extends HttpAgent {
+          createConnection = () => socket
+        }
+      }
     }
   }
 }
 
 let lastUsed = 0;
 export async function heConnect(url: string): Promise<net.Socket> {
-  const {port, hostname} = (new URL(url));
+  const {port:_port, hostname, protocol} = (new URL(url));
+  const port = _port.length ? Number(_port) : (protocol === "https:" ? 443 : 80);
   const lookups = await dns.lookup(hostname, {
     verbatim: true,
     family: 0,
@@ -49,10 +51,17 @@ export async function heConnect(url: string): Promise<net.Socket> {
       if (ctFound) {
         break;
       }
-      const addr = addrs[i]
-      const socket = net.createConnection({
-        host: addr,
-        port: Number(port),
+      const host = addrs[i]
+      console.log({
+        port,
+        host,
+        hostname
+      })
+      // @ts-ignore
+      const socket = (protocol === 'https:' ? tls : net).connect({
+        host,
+        port: port,
+        servername: hostname,
       }).on('connect', () => {
         ctFound = true;
         for (let j = 0; j < sockets.length; j++) {
@@ -61,7 +70,7 @@ export async function heConnect(url: string): Promise<net.Socket> {
           }
         }
         res(socket);
-      }).on('error', (error) => {
+      }).on('error', (error: any) => {
         failed++;
         if (i === 0) {
           err = error

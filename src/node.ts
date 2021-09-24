@@ -2,14 +2,16 @@ import { Server } from 'http';
 import _fetch, { RequestInfo, RequestInit } from 'node-fetch'
 import { createTestServer } from '../test/server';
 import { expect, test } from '../test/test';
-import { options } from './he-connect';
+import { getOptions, heConnect } from './he-connect';
+
 export default async function fetch(url: RequestInfo, init?: RequestInit) {
   if (typeof url !== 'string') {
     return _fetch(url, init);
   }
+  const socket = await heConnect(url)
   return _fetch(url, {
     ...init,
-    ...options
+    ...getOptions(socket),
   });
 }
 
@@ -20,10 +22,9 @@ test('node fetch', async () => {
   });
 
   test('can browser fetch', async () => {
-    const resp = await fetch(`http://localhost:${port}`);
+    const resp = await fetch(`https://google.com`);
     expect(resp.status).toBe(200);
-    const cloned = resp.clone();
-    expect(await resp.text()).toBe('It works!')
+    expect(await resp.text()).toBe('OK')
   });
 
   test('teardown', () => {
