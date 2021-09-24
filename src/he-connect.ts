@@ -59,17 +59,16 @@ export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: 
       }
     }
   })();
-  const onConnect = (socket: net.Socket) => {
-    cb(undefined, socket);
-  }
-  for await (const socket of createConnections(url, 3000, ...addrs)) {
+  // const onConnect = (socket: net.Socket) => {
+  //   cb(undefined, socket);
+  // }
+  for await (const socket of createConnections(url, 300, cb, ...addrs)) {
     sockets.push(socket);
-    socket.on('first-connect', onConnect);
-    socket.on('error', catcher);
+    // socket.on('error', catcher);
   }
 }
 
-export async function*createConnections(url: URL, delay: number, ...addrs: string[][]) {
+export async function*createConnections(url: URL, delay: number,cb: any, ...addrs: string[][]) {
   const {protocol, hostname} = url;
   const port = url.port.length ? Number(url.port) : (protocol === "https:" ? 443 : 80);
 
@@ -77,31 +76,31 @@ export async function*createConnections(url: URL, delay: number, ...addrs: strin
   let ctFound = false;
   let i = 0;
   for (const tuple of addrs) {
+    if (ctFound) {
+      break;
+    }
     for (const host of tuple) {
       const index = i++;
-      if (ctFound) {
-        break;
-      }
       debug(`Trying ${host}...`);
       const socket = (protocol === 'https:' ? tls : net as unknown as typeof tls).connect({
         host,
         port,
         servername: hostname,
-      });
-      sockets.push(socket);
-      socket.on('connect', () => {
+      }).on('connect', () => {
         if (ctFound) {
+          sockets[index] && sockets[index].destroy();
           return;
         }
         ctFound = true;
+        cb(undefined, sockets[index]);
         for (let i = 0; i < sockets.length; i++) {
           if (i !== index) {
-            debug('destroying', i, sockets[i].remoteAddress);
-            sockets[i].unref();
+            debug('Destroying', i, sockets[i].remoteAddress);
             sockets[i].destroy();
+          } else {
+            debug('Keeping', i, sockets[i].remoteAddress);
           }
         }
-        socket.emit('first-connect', socket);
         if (net.isIPv4(host)) {
           lastSuccessful[hostname]  = 4;
         } else {
@@ -109,6 +108,7 @@ export async function*createConnections(url: URL, delay: number, ...addrs: strin
         }
         debug('Connected to', socket.remoteAddress);
       })
+      sockets.push(socket);
       yield socket;
     }
     // give each connection 300 ms to connect before trying next one

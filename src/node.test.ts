@@ -21,6 +21,7 @@ test('node', async () => {
     expect(await resp.text()).toBe('OK')
   });
 
+
   // test('follow redirects', async () => {
   //   const resp = await fetch(`https://google.com`);
   //   expect(resp.status).toBe(200);
