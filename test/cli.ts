@@ -1,32 +1,52 @@
 import { readdirSync } from 'fs';
-import path from 'path'
-import { run } from './test'
+import path from 'path';
+import { name } from '../package.json';
 
 async function cli() {
-  let files = process.argv.filter(file => /\.ts$/.test(file))
-  if (files.length < 2) {
-    files = readdirSync(path.resolve(process.cwd(), 'src'))
-      .map(file => path.resolve('src', file));
-  }
+	console.log(name);
+	process.env.NODE_DEBUG ??= '';
+	process.env.NODE_ENV = name + '-test';
+	const debugFlags: string[] = [];
+	if (process.argv.includes('-d')) {
+		debugFlags.push(name);
+	}
+	if (process.argv.includes('-v')) {
+		debugFlags.push(name + '-debug');
+		debugFlags.push(name + '-verbose');
+	}
+	if (process.argv.includes('-m')) {
+		debugFlags.push(name + '-manual');
+	}
+	process.env.NODE_DEBUG += debugFlags.join(',');
 
-  for (const file of files) {
-    await import(path.resolve(process.cwd(), file))
-      .then(run);
-  }
+	// we must set up environment first
+	const { run } = await import('./test');
+	let files = process.argv
+		.filter((file) => /\.ts$/.test(file))
+		.map((f) => (path.isAbsolute(f) ? f : path.join(process.cwd(), f)));
+	if (files.length < 2) {
+		files = readdirSync(path.join(process.cwd(), 'src')).map((f) =>
+			path.join(process.cwd(), 'src', f),
+		);
+	}
 
+	for (const file of files) {
+		await import(file).then(run);
+	}
 
-  if (process.argv.includes('-w')) {
-    ;(async () => {
-      const fs = await import ('fs');
-      for (const file of files) {
-        fs.watchFile(file, async () => {
-          delete require.cache[file]
-          await import(file)
-          await run()
-        })
-      }
-    })()
-  }
+	if (process.argv.includes('-w')) {
+		(async () => {
+			const fs = await import('fs');
+			for (const file of files) {
+				fs.watchFile(file, async () => {
+					console.log();
+					delete require.cache[file];
+					await import(file);
+					await run();
+				});
+			}
+		})();
+	}
 }
 
-cli()
+cli();
