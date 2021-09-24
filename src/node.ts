@@ -20,16 +20,22 @@ test('node', async () => {
     ({server, port} = await createTestServer());
   });
 
-  test('can fetch local', async () => {
-    const resp = await fetch(`http://localhost:${port}`);
+  test('can fetch api', async () => {
+    const resp = await fetch(`https://google.com`);
     expect(resp.status).toBe(200);
-    expect(await resp.text()).toBe('It works!')
+    expect(await resp.text()).toBe('OK')
   });
 
   test('can fetch api', async () => {
     const resp = await fetch(`https://api.balena-cloud.com/ping`);
     expect(resp.status).toBe(200);
     expect(await resp.text()).toBe('OK')
+  });
+
+  test('can fetch local', async () => {
+    const resp = await fetch(`http://localhost:${port}`);
+    expect(resp.status).toBe(200);
+    expect(await resp.text()).toBe('It works!')
   });
 
   test('teardown', () => {

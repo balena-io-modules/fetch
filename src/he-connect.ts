@@ -5,6 +5,7 @@ import { promisify } from 'util';
 import { URL } from 'url';
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
+import { Socket } from 'dgram';
 
 export const options = {
   agent: function(parsedURL: URL) {
@@ -20,11 +21,13 @@ export const options = {
   }
 }
 function createConnection(url:URL, cb: (err: Error | undefined, socket?: net.Socket) => void) {
-  heConnect(url, cb)
+  const socket = new net.Socket();
+  heConnect(url, socket)
+  return socket
 }
 
-let lastUsed = 0;
-export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: net.Socket) => void): Promise<void> {
+let lastUsed = 6;
+export async function heConnect(url: URL, socket: net.Socket): Promise<void> {
   const {port:_port, hostname, protocol} = url;
   const port = _port.length ? Number(_port) : (protocol === "https:" ? 443 : 80);
   const lookups = await dns.lookup(hostname, {
@@ -36,51 +39,27 @@ export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: 
   const v4 = lookups.filter(lookup => lookup.family === 4);
   const v6 = lookups.filter(lookup => lookup.family === 6);
   const addrs = (lastUsed === 4 ? [...v4, ...v6] : [...v6, ...v4]).map(lookup => lookup.address);
+  console.log(addrs, lastUsed)
   if (addrs.length < 1) {
     throw new Error(`Could not resolve host, ${hostname}`)
   }
 
   let err: Error;
-  const sockets: net.Socket[] = [];
   let ctFound = false;
   let failed = 0;
   for (let i = 0; i < addrs.length; i++) {
     if (ctFound) {
       break;
     }
-    const host = addrs[i]
+    const host = addrs[i];
+    console.log('trying', host);
     // @ts-ignore
-    const socket = (protocol === 'https:' ? tls : net).connect({
+    (protocol === 'https:' ? tls : net).connect({
+      socket,
       host,
       port: port,
       servername: hostname,
-    }).on('connect', () => {
-      ctFound = true;
-      for (let j = 0; j < sockets.length; j++) {
-        cb(undefined, socket)
-        lastUsed = net.isIPv4(host) ? 4 : 6;
-        if (i !== j) {
-          if (!sockets[i].destroyed) {
-            sockets[i].destroy()
-          }
-        }
-      }
-    })
-    .on('error', (error: any) => {
-      failed++;
-      if (i === 0) {
-        err = error
-      }
-      if (failed === addrs.length) {
-        for (const socket of sockets) {
-          socket.destroy();
-        }
-        // reject with error from first ip address
-        cb(err);
-        // socket.emit('error', err)
-      }
-    })
-    sockets.push(socket)
+    });
     // give each connection 300 ms to connect before trying next one
     await promisify(setTimeout)(300)
   }
