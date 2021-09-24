@@ -1,6 +1,6 @@
 import { Server } from 'http';
+import { TESTING } from './constants';
 
-const TESTING = process.env.NODE_ENV === 'test'
 const noop = () => {}
 
 export const createTestServer = (TESTING ? async () => {

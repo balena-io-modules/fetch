@@ -5,7 +5,7 @@
   "browser": "build/browser.js",
   "main": "build/node.js",
   "scripts": {
-    "test": "NODE_ENV=test node -r ts-node/register ./test/cli.ts",
+    "test": "NODE_ENV=happy-eyes-test node -r ts-node/register ./test/cli.ts",
     "debug": "NODE_DEBUG=happy-eyes npm test",
     "verbose": "NODE_DEBUG=happy-eyes,happy-eyes-verbose npm test"
   },

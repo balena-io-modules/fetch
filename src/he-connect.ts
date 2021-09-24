@@ -26,7 +26,8 @@ function createConnection(url:URL, cb: (err: Error | undefined, socket?: net.Soc
   heConnect(url, cb)
 }
 
-let lastUsed = 0;
+const lastUsed: {[host: string]: 4 | 6 | undefined} = {};
+let lastUsedPeriod = 0;
 export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: net.Socket) => void): Promise<void> {
   debug('Connecting to', url.hostname)
   const {port:_port, hostname, protocol} = url;
@@ -39,7 +40,8 @@ export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: 
 
   const v4 = lookups.filter(lookup => lookup.family === 4);
   const v6 = lookups.filter(lookup => lookup.family === 6);
-  const addrs = (lastUsed === 0 ? lookups : lastUsed === 4 ? [...v4, ...v6] : [...v6, ...v4]).map(lookup => lookup.address);
+  const _lastUsed = lastUsed[hostname] ?? lastUsedPeriod;
+  const addrs = (_lastUsed === 0 ? lookups : _lastUsed === 4 ? [...v4, ...v6] : [...v6, ...v4]).map(lookup => lookup.address);
   if (addrs.length < 1) {
     throw new Error(`Could not resolve host, ${hostname}`)
   }
@@ -52,7 +54,6 @@ export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: 
     if (ctFound) {
       break;
     }
-    // @ts-ignore
     const host = addrs[i]
     debug(`Trying ${host}...`);
     // @ts-ignore
@@ -62,9 +63,9 @@ export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: 
       servername: hostname,
     }).on('connect', () => {
       if (net.isIPv4(host)) {
-        lastUsed = 4;
+        lastUsed[hostname] = lastUsedPeriod = 4;
       } else {
-        lastUsed = 6;
+        lastUsed[hostname] = lastUsedPeriod = 6;
       }
       debug('Connected to', addrs[i]);
       ctFound = true;

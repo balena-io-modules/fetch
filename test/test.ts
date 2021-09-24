@@ -1,12 +1,12 @@
 import chalk from 'chalk'
 import _expect from 'expect'
+import { TESTING } from './constants';
 // this will all be tree-shaken
 
 const noop = () => {}
 
 type TestFn = (...args: any) => any | void
 let tests: Array<[number, string, TestFn]> = [];
-const TESTING = process.env.NODE_ENV === 'test'
 
 let depth = 0;
 export const test = TESTING ? async (name: string, fn: TestFn) => {
