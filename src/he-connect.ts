@@ -58,6 +58,7 @@ export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: 
       ctFound = true;
       for (let j = 0; j < sockets.length; j++) {
         cb(undefined, socket)
+        lastUsed = net.isIPv4(host) ? 4 : 6;
         if (i !== j) {
           if (!sockets[i].destroyed) {
             sockets[i].destroy()
