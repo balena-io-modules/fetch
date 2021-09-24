@@ -1,6 +1,7 @@
 import { Server } from 'http';
 import { createTestServer } from '../test/server';
 import { expect, test } from '../test/test';
+import fetch from './browser'
 
 test('browser fetch', async () => {
   let server: Server, port: number;
