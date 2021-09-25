@@ -29,81 +29,71 @@ export const options = {
 }
 
 function createConnection(url:URL, cb: (err: Error | undefined, socket?: net.Socket) => void) {
-  ;(async () => {
-    debug('Connecting to', url.hostname)
-    try {
-      cb(undefined, await happyEyeballs(url));
-    } catch (err:any) {
-      cb(err)
-    }
-  })()
+  debug('Connecting to', url.hostname);
+  happyEyeballs(url, cb)
 }
 
+export async function happyEyeballs(url: URL, cb: (err: Error | undefined, socket?: net.Socket) => void) {
+  const {hostname, protocol} = url;
+  const preferred = lastSuccessful[url.hostname];
+  const lookups = await dns.lookup(hostname, {
+    verbatim: true,
+    family: 0,
+    all: true,
+  });
+  if (!lookups.length) {
+    throw new Error(`Could not resolve host, ${hostname}`);
+  }
+  const addrs = await getAddrInfo(lookups, preferred);
+  const port = url.port.length ? Number(url.port) : (protocol === "https:" ? 443 : 80);
 
-
-export async function happyEyeballs(url: URL) {
-  return new Promise<net.Socket>(async (res, rej) => {
-    const {hostname, protocol} = url;
-    const preferred = lastSuccessful[url.hostname];
-    const lookups = await dns.lookup(hostname, {
-      verbatim: true,
-      family: 0,
-      all: true,
-    });
-    if (!lookups.length) {
-      throw new Error(`Could not resolve host, ${hostname}`);
+  let numErrs = 0;
+  let firstError: Error;
+  let ctFound = false;
+  const sockets: net.Socket[] = [];
+  for (const tuple of addrs) {
+    if (ctFound) {
+      break;
     }
-    const addrs = await getAddrInfo(lookups, preferred);
-    const port = url.port.length ? Number(url.port) : (protocol === "https:" ? 443 : 80);
-
-    let numErrs = 0;
-    let firstError: Error;
-    const sockets: net.Socket[] = [];
-    let ctFound = false;
-    for (const tuple of addrs) {
-      if (ctFound) {
-        break;
-      }
-      for (const host of tuple) {
-        debug(`Trying ${host}...`);
-        const socket = (protocol === 'https:' ? tls : net as unknown as typeof tls).connect({
-          host,
-          port,
-          servername: hostname,
-        }).on('connect', () => {
-          if (ctFound) {
-            socket.destroy();
-            return;
+    for (const host of tuple) {
+      debug(`Trying ${host}...`);
+      const socket = (protocol === 'https:' ? tls : net as unknown as typeof tls).connect({
+        host,
+        port,
+        servername: hostname,
+      }).on('connect', () => {
+        if (ctFound) {
+          socket.destroy();
+          return;
+        }
+        cb(undefined, socket);
+        ctFound = true;
+        for (const s of sockets) {
+          if (s !== socket) {
+            debug('Destroying', s.remoteAddress);
+            s.destroy();
           }
-          res(socket);
-          ctFound = true;
-          for (const s of sockets) {
-            if (s !== socket) {
-              debug('Destroying', s.remoteAddress);
-              s.destroy();
-            }
-          }
-          if (net.isIPv4(host)) {
-            lastSuccessful[hostname]  = 4;
-          } else {
-            lastSuccessful[hostname] = 6;
-          }
-          debug('Connected to', socket.remoteAddress);
-        }).on('error', (err: Error) => {
-          if (numErrs === 0) {
-            firstError = err;
-          }
-          numErrs++;
-          if (numErrs === lookups.length) {
-            rej(firstError);
-          }
-        })
-        sockets.push(socket);
-      }
-      // give each connection 300 ms to connect before trying next one
-      await sleep(NEXT_ADDR_DELAY);
+        }
+        if (net.isIPv4(host)) {
+          lastSuccessful[hostname]  = 4;
+        } else {
+          lastSuccessful[hostname] = 6;
+        }
+        debug('Connected to', socket.remoteAddress);
+      }).on('error', (err: Error) => {
+        if (numErrs === 0) {
+          firstError = err;
+        }
+        numErrs++;
+        if (numErrs === lookups.length) {
+          cb(firstError);
+        }
+      })
+      sockets.push(socket);
     }
-  })
+    // give each connection 300 ms to connect before trying next one
+    await sleep(NEXT_ADDR_DELAY);
+  }
 }
 
 export function*getAddrInfo(lookups: LookupAddress[], preferred: number | undefined): Iterable<string[]> {
