@@ -95,7 +95,7 @@ export async function happyEyeballs(url: URL) {
           }
           numErrs++;
           if (numErrs === lookups.length) {
-            rej(err);
+            rej(firstError);
           }
         })
         sockets.push(socket);
