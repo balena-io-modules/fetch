@@ -6,11 +6,13 @@ import { URL } from 'url';
 import { Agent as HttpAgent } from 'http';
 import { Agent as HttpsAgent } from 'https';
 import { LookupAddress } from 'dns';
-import { createBrotliCompress } from 'zlib';
+
+const NEXT_ADDR_DELAY = 300;
 
 const debug = debuglog('@balena/fetch-debug');
 const verbose = debuglog('@balena/fetch-verbose');
 const sleep = promisify(setTimeout);
+const lastSuccessful: {[host: string]: number | undefined} = {};
 
 export const options = {
   agent: function(parsedURL: URL) {
@@ -27,91 +29,81 @@ export const options = {
 }
 
 function createConnection(url:URL, cb: (err: Error | undefined, socket?: net.Socket) => void) {
-  heConnect(url, cb)
+  ;(async () => {
+    debug('Connecting to', url.hostname)
+    try {
+      cb(undefined, await happyEyeballs(url));
+    } catch (err:any) {
+      cb(err)
+    }
+  })()
 }
 
 
-const lastSuccessful: {[host: string]: number | undefined} = {};
-export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: net.Socket) => void): Promise<void> {
-  debug('Connecting to', url.hostname)
-  const {hostname} = url;
-  const preferred = lastSuccessful[url.hostname];
-  const lookups = await dns.lookup(hostname, {
-    verbatim: true,
-    family: 0,
-    all: true,
-  });
-  if (!lookups.length) {
-    throw new Error(`Could not resolve host, ${hostname}`);
-  }
-  const addrs = await getAddrInfo(lookups, preferred);
-  const sockets: net.Socket[] = [];
-  const catcher = (() => {
+
+export async function happyEyeballs(url: URL) {
+  return new Promise<net.Socket>(async (res, rej) => {
+    const {hostname, protocol} = url;
+    const preferred = lastSuccessful[url.hostname];
+    const lookups = await dns.lookup(hostname, {
+      verbatim: true,
+      family: 0,
+      all: true,
+    });
+    if (!lookups.length) {
+      throw new Error(`Could not resolve host, ${hostname}`);
+    }
+    const addrs = await getAddrInfo(lookups, preferred);
+    const port = url.port.length ? Number(url.port) : (protocol === "https:" ? 443 : 80);
+
     let numErrs = 0;
     let firstError: Error;
-    return (err: Error) => {
-      if (numErrs === 0) {
-        firstError = err;
+    const sockets: net.Socket[] = [];
+    let ctFound = false;
+    for (const tuple of addrs) {
+      if (ctFound) {
+        break;
       }
-      numErrs++;
-      if (numErrs === lookups.length) {
-        cb(err);
-      }
-    }
-  })();
-  const onConnect = (socket: net.Socket) => {
-    cb(undefined, socket);
-  }
-  for await (const socket of createConnections(url, 300, ...addrs)) {
-    socket.on('first-connect', onConnect)
-    sockets.push(socket);
-  }
-}
-
-export async function*createConnections(url: URL, delay: number, ...addrs: string[][]) {
-  const {protocol, hostname} = url;
-  const port = url.port.length ? Number(url.port) : (protocol === "https:" ? 443 : 80);
-
-  const sockets: net.Socket[] = [];
-  let ctFound = false;
-  let i = 0;
-  for (const tuple of addrs) {
-    if (ctFound) {
-      break;
-    }
-    for (const host of tuple) {
-      const index = i++;
-      debug(`Trying ${host}...`);
-      const socket = (protocol === 'https:' ? tls : net as unknown as typeof tls).connect({
-        host,
-        port,
-        servername: hostname,
-      }).on('connect', () => {
-        if (ctFound) {
-          sockets[index] && sockets[index].destroy();
-          return;
-        }
-        socket.emit('first-connect', socket);
-        ctFound = true;
-        for (const s of sockets) {
-          if (s !== socket) {
-            debug('Destroying', s.remoteAddress);
-            s.destroy();
+      for (const host of tuple) {
+        debug(`Trying ${host}...`);
+        const socket = (protocol === 'https:' ? tls : net as unknown as typeof tls).connect({
+          host,
+          port,
+          servername: hostname,
+        }).on('connect', () => {
+          if (ctFound) {
+            socket.destroy();
+            return;
           }
-        }
-        if (net.isIPv4(host)) {
-          lastSuccessful[hostname]  = 4;
-        } else {
-          lastSuccessful[hostname] = 6;
-        }
-        debug('Connected to', socket.remoteAddress);
-      })
-      sockets.push(socket);
-      yield socket;
+          res(socket);
+          ctFound = true;
+          for (const s of sockets) {
+            if (s !== socket) {
+              debug('Destroying', s.remoteAddress);
+              s.destroy();
+            }
+          }
+          if (net.isIPv4(host)) {
+            lastSuccessful[hostname]  = 4;
+          } else {
+            lastSuccessful[hostname] = 6;
+          }
+          debug('Connected to', socket.remoteAddress);
+        }).on('error', (err: Error) => {
+          if (numErrs === 0) {
+            firstError = err;
+          }
+          numErrs++;
+          if (numErrs === lookups.length) {
+            rej(err);
+          }
+        })
+        sockets.push(socket);
+      }
+      // give each connection 300 ms to connect before trying next one
+      await sleep(NEXT_ADDR_DELAY);
     }
-    // give each connection 300 ms to connect before trying next one
-    await sleep(delay);
-  }
+  })
 }
 
 export function*getAddrInfo(lookups: LookupAddress[], preferred: number | undefined): Iterable<string[]> {
@@ -154,19 +146,4 @@ export function*getAddrInfo(lookups: LookupAddress[], preferred: number | undefi
   for (const addr of queue) {
     yield [addr];
   }
-}
-
-function createDeferredPromise<T = any>(): {
-  promise: Promise<T>;
-  res: Promise<T>;
-  rej: typeof Promise['reject'];
-} {
-  let res: (item: T) => void;
-  let rej: (err: any) => void;
-  const promise = new Promise<T>((_res, _rej) => {
-    res = _res;
-    rej = _rej;
-  })
-  // @ts-ignore
-  return {promise, res, rej}
 }
