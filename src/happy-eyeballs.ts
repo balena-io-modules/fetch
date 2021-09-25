@@ -28,6 +28,7 @@ export type BalenaRequestInit = NFRequestInit & RequestInit & {
   family?: number;
   hints?: number;
 };
+
 export async function happyEyeballs(url: URL, init: BalenaRequestInit, cb: (err: Error | undefined, socket?: net.Socket) => void) {
   const {hostname} = url;
   debug('Connecting to', hostname);
