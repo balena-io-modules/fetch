@@ -59,16 +59,16 @@ export async function heConnect(url: URL, cb: (err: Error | undefined, socket?: 
       }
     }
   })();
-  // const onConnect = (socket: net.Socket) => {
-  //   cb(undefined, socket);
-  // }
-  for await (const socket of createConnections(url, 300, cb, ...addrs)) {
+  const onConnect = (socket: net.Socket) => {
+    cb(undefined, socket);
+  }
+  for await (const socket of createConnections(url, 300, ...addrs)) {
+    socket.on('first-connect', onConnect)
     sockets.push(socket);
-    // socket.on('error', catcher);
   }
 }
 
-export async function*createConnections(url: URL, delay: number,cb: any, ...addrs: string[][]) {
+export async function*createConnections(url: URL, delay: number, ...addrs: string[][]) {
   const {protocol, hostname} = url;
   const port = url.port.length ? Number(url.port) : (protocol === "https:" ? 443 : 80);
 
@@ -91,14 +91,12 @@ export async function*createConnections(url: URL, delay: number,cb: any, ...addr
           sockets[index] && sockets[index].destroy();
           return;
         }
+        socket.emit('first-connect', socket);
         ctFound = true;
-        cb(undefined, sockets[index]);
-        for (let i = 0; i < sockets.length; i++) {
-          if (i !== index) {
-            debug('Destroying', i, sockets[i].remoteAddress);
-            sockets[i].destroy();
-          } else {
-            debug('Keeping', i, sockets[i].remoteAddress);
+        for (const s of sockets) {
+          if (s !== socket) {
+            debug('Destroying', s.remoteAddress);
+            s.destroy();
           }
         }
         if (net.isIPv4(host)) {
