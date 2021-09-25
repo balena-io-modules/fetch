@@ -1,6 +1,6 @@
 {
   "name": "@balena/fetch",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "",
   "browser": "build/browser.js",
   "main": "build/node.js",
@@ -32,6 +32,6 @@
     "typescript": "^4.4.3"
   },
   "versionist": {
-    "publishedAt": "2021-09-24T13:47:00.264Z"
+    "publishedAt": "2021-09-25T22:15:50.119Z"
   }
 }
