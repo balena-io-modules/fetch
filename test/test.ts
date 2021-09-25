@@ -13,6 +13,7 @@ const tests: Array<[number, string, TestFn]> = [];
 type Test = {
 	(name: string, fn: TestFn): void;
 	manual: (name: string, fn: TestFn) => void;
+	skip: (...args: any[]) => any;
 };
 
 let depth = 0;
@@ -28,6 +29,8 @@ test.manual =
 				tests.push([depth, name, fn]);
 		  }
 		: noop;
+
+test.skip = noop;
 
 export const expect = TESTING ? _expect : (noop as unknown as typeof _expect);
 
