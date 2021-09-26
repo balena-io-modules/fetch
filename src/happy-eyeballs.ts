@@ -108,7 +108,7 @@ export async function happyEyeballs(url: URL, init: BalenaRequestInit, cb: (err:
       // give each connection 300 ms to connect before trying next one
       abortableSleep(init.delay || DEFAULT_NEXT_ADDR_DELAY, abortSignal),
       // skip to next pair if both connections drop before that
-      // Promise.all(batch.map(addr => EventEmitter.once(sockets.get(addr)!, 'close'))).catch(() => {}),
+      Promise.all(batch.map(addr => EventEmitter.once(sockets.get(addr)!, 'close'))).catch(() => {}),
     ])
     abortSignal.aborted = true;
   }
