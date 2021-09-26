@@ -17,9 +17,36 @@ const DEFAULT_LOOKUP_OPTIONS = Object.freeze({
 const debug = debuglog('@balena/fetch-debug');
 // const verbose = debuglog('@balena/fetch-verbose');
 
-const sleep = promisify(setTimeout);
+class AbortError extends Error {
+  public name = "AbortError"
+}
+
+class AbortSignal extends EventEmitter {}
+
+class AbortController {
+  signal = new AbortSignal;
+  abort() {
+    this.signal.emit('error', new AbortError);
+  }
+}
+
 // We may want to abort a sleep to keep the sleep handle from keeping the process open
-const abortableSleep = async (ms: number, abortSignal: {aborted: boolean}) => {
+const sleep = async (ms: number, signal?: AbortSignal) => {
+  return signal?.aborted ?
+    Promise.reject(new AbortError) :
+    new Promise<void>((res, rej) => {
+      let resolved = false;
+      const timeout = setTimeout(() => {
+        resolved = true;
+        res();
+      }, ms);
+      if (typeof signal?.addEventListener === 'function') {
+
+      } else if (typeof signal?.on === 'function') {
+
+      }
+    });
+  })
   while ((ms > 0) && !abortSignal.aborted) {
     await sleep(Math.min(100,ms))
     ms -= 100;
