@@ -17,6 +17,9 @@
     "abort-controller": "^3.0.0",
     "whatwg-fetch": "^3.6.2"
   },
+  "engines": {
+    "node": "^12.20.0 || ^14.13.1 || >=16.0.0"
+  },
   "devDependencies": {
     "@balena/lint": "^6.1.1",
     "@types/chalk": "^2.2.0",
