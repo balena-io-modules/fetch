@@ -9,4 +9,4 @@ test.manual('zip addresses', async () => {
   for (const addr of Array.from(addrs)) {
     console.log(addr)
   }
-})
+});

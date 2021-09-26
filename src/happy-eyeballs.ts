@@ -16,7 +16,15 @@ const DEFAULT_LOOKUP_OPTIONS = Object.freeze({
 
 const debug = debuglog('@balena/fetch-debug');
 // const verbose = debuglog('@balena/fetch-verbose');
+
 const sleep = promisify(setTimeout);
+// We may want to abort a sleep to keep the sleep handle from keeping the process open
+const abortableSleep = async (ms: number, abortSignal: {aborted: boolean}) => {
+  while ((ms > 0) && !abortSignal.aborted) {
+    await sleep(Math.min(100,ms))
+    ms -= 100;
+  }
+}
 
 // hash of hosts and last associated connection family
 const familyCache = new Map<string, number>();
@@ -28,6 +36,7 @@ export type BalenaRequestInit = NFRequestInit & RequestInit & {
   family?: number;
   hints?: number;
 };
+
 export async function happyEyeballs(url: URL, init: BalenaRequestInit, cb: (err: Error | undefined, socket?: net.Socket) => void) {
   const {hostname} = url;
   debug('Connecting to', hostname);
@@ -47,20 +56,25 @@ export async function happyEyeballs(url: URL, init: BalenaRequestInit, cb: (err:
 
   let failed = 0;
   let err: Error;
-  function onError(_err:any) {
+  function onError(this: net.Socket, _err:any) {
+    debug('Got error', _err)
+
     // Only use the value of the first error, as that was the one most likely to succeed
     if (!err){
       err = _err
     }
-    if (++failed===lookups.length) {
-      cb(err)
+
+    if (++failed>=lookups.length) {
+      debug('All addresses failed')
+      return cb(err)
     }
+    debug('More addresses to try, continuing...');
   }
 
   let ctFound = false;
   function onConnect(this: net.Socket) {
+    debug('Connected to', this.remoteAddress);
     ctFound = true;
-    cb(undefined, this);
     for (const s of sockets.values()) {
       if (s !== this) {
         debug('Destroying', s.remoteAddress);
@@ -68,8 +82,8 @@ export async function happyEyeballs(url: URL, init: BalenaRequestInit, cb: (err:
       }
     }
     // save last successful connection family for future reference
-    familyCache.set(hostname, net.isIP(this.remoteAddress!));
-    debug('Connected to', this.remoteAddress);
+    // familyCache.set(hostname, net.isIP(this.remoteAddress!));
+    cb(undefined, this);
   }
 
   for (const batch of zip(lookups, familyCache.get(hostname))) {
@@ -79,22 +93,24 @@ export async function happyEyeballs(url: URL, init: BalenaRequestInit, cb: (err:
 
     for (const addr of batch) {
       debug(`Trying ${addr}...`);
-
       sockets.set(addr, connector
         .connect({
           host: addr,
           port,
           servername: hostname,
         })
-        .once('connect', onConnect)
-        .once('error', onError));
+        .on('connect', onConnect)
+        .on('error', onError));
     }
+
+    const abortSignal = {aborted: false};
     await Promise.race([
       // give each connection 300 ms to connect before trying next one
-      sleep(init.delay || DEFAULT_NEXT_ADDR_DELAY),
+      abortableSleep(init.delay || DEFAULT_NEXT_ADDR_DELAY, abortSignal),
       // skip to next pair if both connections drop before that
-      Promise.all(batch.map(addr => EventEmitter.once(sockets.get(addr)!, 'close'))),
+      // Promise.all(batch.map(addr => EventEmitter.once(sockets.get(addr)!, 'close'))).catch(() => {}),
     ])
+    abortSignal.aborted = true;
   }
 }
 

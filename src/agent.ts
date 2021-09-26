@@ -3,6 +3,7 @@ import { Agent as HttpsAgent } from 'https';
 import { BalenaRequestInit, happyEyeballs } from './happy-eyeballs';
 import { URL } from 'url';
 import * as net from 'net';
+import { debuglog } from 'util';
 
 const agentCache = new Map<string, HttpsAgent|HttpAgent>();
 export function getAgent(init: BalenaRequestInit) {
@@ -22,14 +23,12 @@ export function getAgent(init: BalenaRequestInit) {
 const hashCache = new WeakMap<any, string>()
 function getHash(item: any): string {
   switch (typeof item) {
+    // we can cache objects and functions, in case people reuse the same
+    // object or function in the options, so we don't have to create a hash again
     case 'object':
-    case 'function':
-      // we can cache objects and functions, in case people reuse the same
-      // object or function in the options, so we don't have to create a hash again
       if (hashCache.has(item)) {
         return hashCache.get(item)!;
       }
-    case 'object':
       // object has not been cached, so we need to create a new hash
       // this enables use to reuse http(s) agents which have the same
       // options for config, even if they are different objects
@@ -48,6 +47,9 @@ function getHash(item: any): string {
       hashCache.set(item, hString);
       return hString
     case 'function':
+      if (hashCache.has(item)) {
+        return hashCache.get(item)!;
+      }
       const id = String(Math.random());
       hashCache.set(item, id);
       return id!;
