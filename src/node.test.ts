@@ -8,7 +8,7 @@ import { expect, test } from "../test/test";
 import fetch from "./node";
 const lookup = promisify(lookupSync);
 
-test('node', async () => {
+test.parallel('node', async () => {
   test('can fetch local', async () => {
     let server: Server, port: number;
     ({server, port} = await createTestServer());
@@ -24,14 +24,13 @@ test('node', async () => {
     expect(await resp.text()).toBe('OK')
   });
 
-
   test('follow redirects', async () => {
     const resp = await fetch(`https://google.com`);
     expect(resp.status).toBe(200);
   });
 });
 
-test('incorrect addresses', () => {
+test.parallel('incorrect addresses', () => {
   test('with incorrect addresses', async () => {
     await fetch(`https://google.com`, {
       lookup: async (hostname, cb) => {

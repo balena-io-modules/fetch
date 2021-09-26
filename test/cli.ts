@@ -30,13 +30,13 @@ async function cli() {
 		);
 	}
 
-	for (const file of files) {
-		await import(file).then(run);
-	}
+	await Promise.all(files.map(file => import(file)));
+	await run();
 
 	if (process.argv.includes('-w')) {
 		(async () => {
 			const fs = await import('fs');
+
 			for (const file of files) {
 				fs.watchFile(file, async () => {
 					console.log();
