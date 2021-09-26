@@ -1,10 +1,12 @@
+import AbortController from 'abort-controller';
 import { LookupAddress, LookupOptions } from 'dns';
-import * as dns from 'dns/promises'
+import {lookup as lookupSync} from 'dns'
 import { Server } from "http";
-import { inspect } from 'util';
+import { promisify } from 'util';
 import { createTestServer } from "../test/server";
 import { expect, test } from "../test/test";
 import fetch from "./node";
+const lookup = promisify(lookupSync);
 
 test('node', async () => {
   test('can fetch local', async () => {
@@ -16,10 +18,11 @@ test('node', async () => {
     server.close();
   })
 
-  test('can fetch api', async () => {
+  test.skip('can fetch api', async () => {
     const resp = await fetch(`https://api.balena-cloud.com/ping`);
     expect(resp.status).toBe(200);
     expect(await resp.text()).toBe('OK')
+    console.log('trying')
   });
 
 
@@ -27,58 +30,89 @@ test('node', async () => {
     const resp = await fetch(`https://google.com`);
     expect(resp.status).toBe(200);
   });
+});
 
-  test.skip('with incorrect addresses', async () => {
+test('incorrect addresses', () => {
+  test('with incorrect addresses', async () => {
     await fetch(`https://google.com`, {
       lookup: async (hostname, cb) => {
-        const realResults = await dns.lookup(hostname, {all: true, family: 0});
+        const realResults = await lookup(hostname, {all: true, family: 0});
         return [
-          {
-            family: 6,
-            address: 'dead::beef',
-          },
-          {
-            family: 4,
-            address: '225.25.235.34',
-          },
+          ...getFakeAddresses(1),
           ...realResults,
         ]
       }
     });
   });
 
-  test('with many incorrect addresses', async () => {
+  test('fail with all incorrect addresses', async () => {
+    try {
+      await fetch(`https://www.google.com`, {
+        lookup: async () => getFakeAddresses(20),
+        delay: 2,
+        timeout: 1,
+      })
+      throw new Error('Request should not succeed with incorrect addresses.');
+    } catch (err: any) {
+      expect(err.message.includes('timed out')).toBe(true);
+    }
+  })
+
+  test('spam all IPs with many incorrect addresses', async () => {
+    const start = Date.now();
     await fetch(`https://www.google.com`, {
       lookup: async (hostname: string, options: LookupOptions) => {
-        const realResults = await dns.lookup(hostname, options) as LookupAddress[];
+        const realResults = await lookup(hostname, options) as LookupAddress[];
         return [
-          {
-            family: 6,
-            address: 'dead::beef',
-          },
-          {
-            family: 4,
-            address: '225.25.235.34',
-          },
-          {
-            family: 6,
-            address: 'de3d::beef',
-          },
-          {
-            family: 4,
-            address: '215.25.235.34',
-          },
-          {
-            family: 6,
-            address: 'deaf::beej',
-          },
-          {
-            family: 4,
-            address: '215.25.233.31',
-          },
+          ...getFakeAddresses(20),
           ...realResults,
         ];
-      }
+      },
+      delay: 1,
     });
+    if (start - Date.now() > 1000) {
+      throw new Error('Could not connect in time.')
+    }
   });
-});
+
+  test('can abort requests', async () => {
+    const ac = new AbortController();
+    try {
+      const prom = fetch(`https://www.google.com`, {
+        delay: 0,
+        signal: ac.signal,
+        lookup: async (hostname: string, options: LookupOptions) => {
+          return [
+            {
+              family: 6,
+              address: 'dead::beef',
+            },
+            {
+              family: 4,
+              address: '225.25.235.34',
+            },
+          ];
+        }
+      });
+      ac.abort();
+      await prom;
+      throw new Error('Request was not aborted.')
+    } catch (err: any) {
+      expect(err.name).toBe('AbortError');
+    }
+  });
+
+  function getFakeAddresses(num: number) {
+    const result = [];
+    while (--num) {
+      result.push({
+        family: 6,
+        address: 'dead::' + num.toString(16),
+      }, {
+        family: 4,
+        address: '192.168.1.' + num,
+      })
+    }
+    return result;
+  }
+})

@@ -1,11 +1,15 @@
 import * as net from 'net';
 import * as tls from 'tls';
-import * as dns from 'dns/promises';
+import * as dns from 'dns';
 import { debuglog, promisify } from 'util';
 import { URL } from 'url';
 import { LookupAddress, LookupOptions } from 'dns';
-import { EventEmitter } from 'stream';
 import { RequestInit as NFRequestInit } from 'node-fetch'
+import AbortError from './abort-error';
+import { AbortController, AbortSignal } from 'abort-controller';
+import {once} from 'events';
+
+const dnsLookup = promisify(dns.lookup);
 
 const DEFAULT_NEXT_ADDR_DELAY = 300;
 const DEFAULT_LOOKUP_OPTIONS = Object.freeze({
@@ -17,40 +21,21 @@ const DEFAULT_LOOKUP_OPTIONS = Object.freeze({
 const debug = debuglog('@balena/fetch-debug');
 // const verbose = debuglog('@balena/fetch-verbose');
 
-class AbortError extends Error {
-  public name = "AbortError"
-}
-
-class AbortSignal extends EventEmitter {}
-
-class AbortController {
-  signal = new AbortSignal;
-  abort() {
-    this.signal.emit('error', new AbortError);
-  }
-}
-
-// We may want to abort a sleep to keep the sleep handle from keeping the process open
-const sleep = async (ms: number, signal?: AbortSignal) => {
+// We may want to abort a wait to keep the wait handle from keeping the process open
+const wait = async (ms: number, signal?: AbortSignal) => {
   return signal?.aborted ?
-    Promise.reject(new AbortError) :
+    Promise.reject(new AbortError()) :
     new Promise<void>((res, rej) => {
-      let resolved = false;
+      const onAbort = () => {
+        clearTimeout(timeout);
+        rej(new AbortError());
+      };
       const timeout = setTimeout(() => {
-        resolved = true;
+        signal?.removeEventListener('abort', onAbort);
         res();
       }, ms);
-      if (typeof signal?.addEventListener === 'function') {
-
-      } else if (typeof signal?.on === 'function') {
-
-      }
-    });
-  })
-  while ((ms > 0) && !abortSignal.aborted) {
-    await sleep(Math.min(100,ms))
-    ms -= 100;
-  }
+      signal?.addEventListener('abort', onAbort);
+  });
 }
 
 // hash of hosts and last associated connection family
@@ -62,13 +47,15 @@ export type BalenaRequestInit = NFRequestInit & RequestInit & {
   lookup?: (hostname: string, options: LookupOptions) => Promise<LookupAddress | LookupAddress[]>;
   family?: number;
   hints?: number;
+  signal?: AbortSignal;
+  timeout?: number;
 };
 
 export async function happyEyeballs(url: URL, init: BalenaRequestInit, cb: (err: Error | undefined, socket?: net.Socket) => void) {
   const {hostname} = url;
   debug('Connecting to', hostname);
 
-  const lookups = (await (init.lookup || dns.lookup)(hostname, {
+  const lookups = (await (init.lookup || dnsLookup)(hostname, {
     ...DEFAULT_LOOKUP_OPTIONS,
     family: init.family || DEFAULT_LOOKUP_OPTIONS.family,
     hints: init.hints,
@@ -78,11 +65,21 @@ export async function happyEyeballs(url: URL, init: BalenaRequestInit, cb: (err:
   }
 
   const sockets = new Map<string, net.Socket>();
+  init.signal?.addEventListener('abort', () => {
+    debug('Received abort signal, destroying all sockets.');
+    for (const socket of sockets.values()) {
+      socket.destroy();
+    }
+    cb(new AbortError);
+  })
   const port = url.port.length ? Number(url.port) : (init.secure ? 443 : 80);
 
-  let failed = 0;
+  let trying = lookups.length;
   let err: Error;
   function onError(this: net.Socket, _err:any) {
+    if (init.signal?.aborted){
+      return;
+    }
     debug('Got error', _err)
 
     // Only use the value of the first error, as that was the one most likely to succeed
@@ -90,7 +87,13 @@ export async function happyEyeballs(url: URL, init: BalenaRequestInit, cb: (err:
       err = _err
     }
 
-    if (++failed>=lookups.length) {
+    this.destroy();
+
+    debug('trying', trying)
+    if (!--trying) {
+      if (Array.from(sockets.values()).every(s => s.destroyed)) {
+        debug('all sockets destroyed');
+      }
       debug('All addresses failed')
       return cb(err)
     }
@@ -108,42 +111,74 @@ export async function happyEyeballs(url: URL, init: BalenaRequestInit, cb: (err:
       }
     }
     // save last successful connection family for future reference
-    // familyCache.set(hostname, net.isIP(this.remoteAddress!));
+    familyCache.set(hostname, net.isIP(this.remoteAddress!));
     cb(undefined, this);
   }
 
   for (const batch of zip(lookups, familyCache.get(hostname))) {
-    if (ctFound) {
-      break;
+    debug('batch', batch);
+    if (ctFound || init.signal?.aborted) {
+      return;
     }
 
     for (const addr of batch) {
       debug(`Trying ${addr}...`);
-      const socket = new net.Socket();
-      sockets.set(addr, socket);
-      const common = {host: addr, port};
-      if (init.secure) {
-        tls.connect({
-          ...common,
-          socket,
-          servername: hostname,
+      const socket = (new net.Socket())
+        .connect({
+          host: addr,
+          port,
+        });
+      if(init.timeout) {
+        debug('Setting timeout, ' + init.timeout);
+        socket.setTimeout(init.timeout);
+        socket.on('timeout', function(this: net.Socket) {
+          --trying;
+          this.destroy();
+          if (!trying) {
+            if (Array.from(sockets.values()).every(s => !s.destroyed)) {
+              cb(err || new Error('All connection attempts to ' + hostname + ' timed out.'))
+            }
+          }
+          debug(`Request to ${addr} timed out...`)
         })
-      } else {
-        net
-          .connect(common)
-          .on('connect', onConnect)
-          .on('error', onError);
       }
+      const ct = init.secure ? tls.connect({
+        socket,
+        servername: hostname,
+        timeout: init.timeout,
+      }) : socket;
+      sockets.set(addr, ct);
+      ct
+        .on('connect', onConnect)
+        .on('error', onError);
     }
 
-    const abortSignal = {aborted: false};
-    await Promise.race([
+    // abort the delay if all sockets close before the delay runs out,
+    const {abort:_abort, signal} = new AbortController();
+    const abort = () => {
+      debug('Aborting delay promise');
+      _abort();
+    };
+    init.signal?.addEventListener('abort', abort);
+    Promise.all(batch
+      .map(addr => sockets.get(addr))
+      .map(sck => Promise.race([
+        once(sck!, 'close', {signal}),
+        once(sck!, 'error', {signal}),
+      ]))
+    )
+      .then(() => abort())
+      .catch(() => {});
+
+    try {
       // give each connection 300 ms to connect before trying next one
-      abortableSleep(init.delay || DEFAULT_NEXT_ADDR_DELAY, abortSignal),
-      // skip to next pair if both connections drop before that
-      Promise.all(batch.map(addr => EventEmitter.once(sockets.get(addr)!, 'close'))).catch(() => {}),
-    ])
-    abortSignal.aborted = true;
+      await wait(init.delay || DEFAULT_NEXT_ADDR_DELAY, signal);
+    } catch (err: any) {
+      if (err?.name !== 'AbortError') {
+        throw err;
+      }
+    }
+    init.signal?.removeEventListener('abort', abort);
   }
 }
 
@@ -159,7 +194,7 @@ export function*zip(lookups: LookupAddress[], init?: number): Iterable<string[]>
   const queue: string[] = [];
 
   for (const {address, family} of lookups) {
-    if (family === next) {
+    if (family === next || !next) {
       if (init) {
         // we've seen this host before, so just try this connection first
         yield [address];
