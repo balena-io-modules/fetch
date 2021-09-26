@@ -51,7 +51,6 @@ export async function happyEyeballs(url: URL, init: BalenaRequestInit, cb: (err:
   }
 
   const sockets = new Map<string, net.Socket>();
-  const connector = init.secure ? tls : net as unknown as typeof tls; // the only difference here is the SNI
   const port = url.port.length ? Number(url.port) : (init.secure ? 443 : 80);
 
   let failed = 0;
@@ -93,14 +92,21 @@ export async function happyEyeballs(url: URL, init: BalenaRequestInit, cb: (err:
 
     for (const addr of batch) {
       debug(`Trying ${addr}...`);
-      sockets.set(addr, connector
-        .connect({
-          host: addr,
-          port,
+      const socket = new net.Socket();
+      sockets.set(addr, socket);
+      const common = {host: addr, port};
+      if (init.secure) {
+        tls.connect({
+          ...common,
+          socket,
           servername: hostname,
         })
-        .on('connect', onConnect)
-        .on('error', onError));
+      } else {
+        net
+          .connect(common)
+          .on('connect', onConnect)
+          .on('error', onError);
+      }
     }
 
     const abortSignal = {aborted: false};
