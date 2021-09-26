@@ -44,7 +44,7 @@ export async function happyEyeballs(url: URL, init: BalenaRequestInit, cb: (err:
     hints: init.hints,
   })) as LookupAddress[];
   if (!lookups.length) {
-    throw new Error(`Could not resolve host, ${hostname}`);
+    cb(new Error(`Could not resolve host, ${hostname}`));
   }
 
   const sockets = new Map<string, net.Socket>();
