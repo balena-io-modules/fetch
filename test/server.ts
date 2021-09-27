@@ -15,7 +15,7 @@ export const createTestServer = (
 						});
 						res.write('It works!');
 						res.end();
-						req.destroy();
+						process.nextTick(() => req.destroy());
 					})
 						.listen(() => {
 							// tslint:disable-next-line:ban-ts-ignore

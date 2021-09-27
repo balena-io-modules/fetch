@@ -8,7 +8,7 @@ import { expect, test } from "../test/test";
 import fetch from "./node";
 const lookup = promisify(lookupSync);
 
-test('node', async () => {
+test.parallel('node', async () => {
   test('can fetch local', async () => {
     let server: Server, port: number;
     ({server, port} = await createTestServer());
@@ -18,13 +18,11 @@ test('node', async () => {
     server.close();
   })
 
-  test.skip('can fetch api', async () => {
+  test('can fetch api', async () => {
     const resp = await fetch(`https://api.balena-cloud.com/ping`);
     expect(resp.status).toBe(200);
     expect(await resp.text()).toBe('OK')
-    console.log('trying')
   });
-
 
   test('follow redirects', async () => {
     const resp = await fetch(`https://google.com`);
@@ -32,7 +30,7 @@ test('node', async () => {
   });
 });
 
-test('incorrect addresses', () => {
+test.parallel('incorrect addresses', () => {
   test('with incorrect addresses', async () => {
     await fetch(`https://google.com`, {
       lookup: async (hostname, cb) => {
@@ -81,18 +79,7 @@ test('incorrect addresses', () => {
       const prom = fetch(`https://www.google.com`, {
         delay: 0,
         signal: ac.signal,
-        lookup: async (hostname: string, options: LookupOptions) => {
-          return [
-            {
-              family: 6,
-              address: 'dead::beef',
-            },
-            {
-              family: 4,
-              address: '225.25.235.34',
-            },
-          ];
-        }
+        lookup: async () => getFakeAddresses(1)
       });
       ac.abort();
       await prom;
@@ -115,4 +102,7 @@ test('incorrect addresses', () => {
     }
     return result;
   }
+})
+process.on('unhandledRejection', (err:any) => {
+  console.error('unhandled rejection', err);
 })

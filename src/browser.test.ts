@@ -6,9 +6,13 @@ import fetch from './browser'
 test('browser fetch', async () => {
   let server: Server, port: number;
   test('setup', async () => {
+    const { TextEncoder, TextDecoder } = require("util");
+    global.TextEncoder = TextEncoder;
+    global.TextDecoder = TextDecoder;
     const {JSDOM} = await import('jsdom');
     const {window} = new JSDOM;
     global.XMLHttpRequest = window.XMLHttpRequest;
+    global.TextEncoder = window.TextEncoder;
     ({server, port} = await createTestServer());
   });
 
