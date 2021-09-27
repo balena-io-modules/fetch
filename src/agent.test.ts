@@ -1,7 +1,7 @@
 import { expect, test } from '../test/test';
 import {getAgent} from './agent';
 
-test('agent', () => {
+test.parallel('agent', () => {
   test('returns same agent for same options', () => {
     const a1 = getAgent({secure: true});
     const a2 = getAgent({secure: false});

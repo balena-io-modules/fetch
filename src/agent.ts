@@ -3,7 +3,6 @@ import { Agent as HttpsAgent } from 'https';
 import { BalenaRequestInit, happyEyeballs } from './happy-eyeballs';
 import { URL } from 'url';
 import * as net from 'net';
-import { debuglog } from 'util';
 
 const agentCache = new Map<string, HttpsAgent|HttpAgent>();
 export function getAgent(init: BalenaRequestInit) {

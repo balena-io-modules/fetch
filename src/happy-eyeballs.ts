@@ -21,23 +21,6 @@ const DEFAULT_LOOKUP_OPTIONS = Object.freeze({
 const debug = debuglog('@balena/fetch-debug');
 // const verbose = debuglog('@balena/fetch-verbose');
 
-// We may want to abort a wait to keep the wait handle from keeping the process open
-const wait = async (ms: number, signal?: AbortSignal) => {
-  return signal?.aborted ?
-    Promise.reject(new AbortError()) :
-    new Promise<void>((res, rej) => {
-      const onAbort = () => {
-        clearTimeout(timeout);
-        rej(new AbortError());
-      };
-      const timeout = setTimeout(() => {
-        signal?.removeEventListener('abort', onAbort);
-        res();
-      }, ms);
-      signal?.addEventListener('abort', onAbort);
-  });
-}
-
 // hash of hosts and last associated connection family
 const familyCache = new Map<string, number>();
 
@@ -61,7 +44,7 @@ export async function happyEyeballs(url: URL, init: BalenaRequestInit, cb: (err:
     hints: init.hints,
   })) as LookupAddress[];
   if (!lookups.length) {
-    throw new Error(`Could not resolve host, ${hostname}`);
+    cb(new Error(`Could not resolve host, ${hostname}`));
   }
 
   const sockets = new Map<string, net.Socket>();
@@ -221,4 +204,21 @@ export function*zip(lookups: LookupAddress[], init?: number): Iterable<string[]>
   for (const addr of queue) {
     yield [addr];
   }
+}
+
+// We may want to abort a wait to keep the wait handle from keeping the process open
+const wait = async (ms: number, signal?: AbortSignal) => {
+  return signal?.aborted ?
+    Promise.reject(new AbortError()) :
+    new Promise<void>((res, rej) => {
+      const onAbort = () => {
+        clearTimeout(timeout);
+        rej(new AbortError());
+      };
+      const timeout = setTimeout(() => {
+        signal?.removeEventListener('abort', onAbort);
+        res();
+      }, ms);
+      signal?.addEventListener('abort', onAbort);
+  });
 }
