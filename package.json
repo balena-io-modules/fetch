@@ -1,6 +1,6 @@
 {
   "name": "@balena/fetch",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "description": "",
   "browser": "build/browser.js",
   "main": "build/node.js",
@@ -18,7 +18,7 @@
     "whatwg-fetch": "^3.6.2"
   },
   "engines": {
-    "node": "^12.20.0 || ^14.13.1 || >=16.0.0"
+    "node": "^10.24.1 || ^12.20.0 || ^14.13.1 || >=16.0.0"
   },
   "devDependencies": {
     "@balena/lint": "^6.1.1",
@@ -36,6 +36,6 @@
     "typescript": "^4.4.3"
   },
   "versionist": {
-    "publishedAt": "2021-09-26T19:08:40.802Z"
+    "publishedAt": "2021-09-27T00:00:59.114Z"
   }
 }
